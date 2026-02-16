@@ -1,8 +1,9 @@
 
-////v4 getting the DATA on uart
+////v5 PDM mic -> dB level over UART
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h>  // Added for strlen()
+#include <string.h>
+#include <stdio.h>
 #include "nrf.h"
 #include "nrf_gpio.h"
 #include "nrfx_pdm.h"
@@ -63,7 +64,7 @@ static void uart_init(void)
     uart_config.p_context = NULL;
     uart_config.hwfc = NRF_UARTE_HWFC_DISABLED;  // No hardware flow control
     uart_config.parity = NRF_UARTE_PARITY_EXCLUDED;
-    uart_config.baudrate = NRF_UARTE_BAUDRATE_921600;  // High speed for audio
+    uart_config.baudrate = NRF_UARTE_BAUDRATE_115200;  // Standard speed for text
     uart_config.interrupt_priority = NRFX_UARTE_DEFAULT_CONFIG_IRQ_PRIORITY;
     
     ret_code_t err_code = nrfx_uarte_init(&m_uart, &uart_config, uart_event_handler);
@@ -87,17 +88,105 @@ static void uart_send(uint8_t const * p_data, size_t length)
 }
 
 /**
- * @brief PDM event handler - sends audio data over UART
+ * @brief Integer square root (for RMS calculation without floating point)
+ */
+static uint32_t isqrt(uint32_t n)
+{
+    if (n == 0) return 0;
+    uint32_t x = n;
+    uint32_t y = (x + 1) / 2;
+    while (y < x)
+    {
+        x = y;
+        y = (x + n / x) / 2;
+    }
+    return x;
+}
+
+// T3902 Standard Mode: -26 dBFS at 94 dB SPL, 0 dBFS = 120 dB SPL
+// PDM gain_l = 0x20 adds ~4 dB attenuation vs default 0x28
+// Total offset: 120 + 4 = 124 (in x10 fixed-point: 1240)
+#define DBFS_TO_SPL_OFFSET_X10  1240
+
+/**
+ * @brief Approximate 20*log10(rms) using integer math, converted to dB SPL.
+ *        Uses log2 via leading-zero count, then converts: dB ~ 6.0206 * log2(x)
+ *        Returns dB SPL in fixed-point with 1 decimal place (e.g. 723 = 72.3 dB SPL).
+ */
+static int32_t rms_to_db_spl(uint32_t rms)
+{
+    if (rms == 0) return 0; // silence = 0 dB SPL (floor)
+
+    // 20*log10(rms/32768) in x10 fixed point
+    // 20*log10(32768) * 10 = 903
+
+    // Find integer part of log2
+    uint32_t log2_int = 0;
+    uint32_t temp = rms;
+    while (temp > 1)
+    {
+        temp >>= 1;
+        log2_int++;
+    }
+
+    // Fractional part: linear interpolation between powers of 2
+    uint32_t pow2 = 1UL << log2_int;
+    uint32_t frac_1000 = ((rms - pow2) * 1000UL) / pow2;
+
+    // 20*log10(rms) in x10 fixed point = 60 * log2(rms)
+    int32_t dbfs_x10 = (int32_t)(60 * log2_int + (60 * frac_1000) / 1000);
+    dbfs_x10 -= 903; // subtract 20*log10(32768)*10
+
+    // Convert dBFS to dB SPL
+    int32_t db_spl_x10 = dbfs_x10 + DBFS_TO_SPL_OFFSET_X10;
+
+    if (db_spl_x10 < 0) db_spl_x10 = 0; // floor at 0 dB SPL
+
+    return db_spl_x10;
+}
+
+// UART text buffer for dB output
+static char m_uart_text[64];
+
+/**
+ * @brief PDM event handler - computes dB level and sends over UART
  */
 static void pdm_event_handler(nrfx_pdm_evt_t const * p_evt)
 {
     if (p_evt->buffer_released != NULL)
     {
-         //Send the audio buffer over UART
-         //Cast int16_t* to uint8_t* for byte transmission
-        uart_send((uint8_t*)p_evt->buffer_released, PDM_BUFFER_SIZE * sizeof(int16_t));
+        int16_t *p_buf = (int16_t *)p_evt->buffer_released;
+
+        // First pass: compute DC mean to remove T3902's ~3% DC offset
+        int32_t sum = 0;
+        for (int i = 0; i < PDM_BUFFER_SIZE; i++)
+        {
+            sum += (int32_t)p_buf[i];
+        }
+        int32_t dc_mean = sum / PDM_BUFFER_SIZE;
+
+        // Second pass: compute sum of squares with DC removed
+        uint64_t sum_sq = 0;
+        for (int i = 0; i < PDM_BUFFER_SIZE; i++)
+        {
+            int32_t sample = (int32_t)p_buf[i] - dc_mean;
+            sum_sq += (uint64_t)(sample * sample);
+        }
+
+        uint32_t mean_sq = (uint32_t)(sum_sq / PDM_BUFFER_SIZE);
+        uint32_t rms = isqrt(mean_sq);
+
+        int32_t db_spl = rms_to_db_spl(rms);
+
+        // db_spl is in x10 fixed point, e.g. 753 = 75.3 dB SPL
+        int32_t whole = db_spl / 10;
+        int32_t frac = db_spl % 10;
+        int len = snprintf(m_uart_text, sizeof(m_uart_text),
+                           "dB SPL: %d.%d\r\n", (int)whole, (int)frac);
+
+        uart_send((uint8_t*)m_uart_text, (size_t)len);
     }
-    
+
     if (p_evt->buffer_requested)
     {
         m_buffer_idx = (m_buffer_idx + 1) % 2;
@@ -132,13 +221,8 @@ int main(void)
     uart_init();
     
      //Send startup message
-    const char startup_msg[] = "PDM Audio Streaming via UART\r\n";
+    const char startup_msg[] = "PDM Mic dB SPL Monitor\r\n";
     uart_send((uint8_t*)startup_msg, strlen(startup_msg));
-    nrf_delay_ms(100);
-    
-     //Send sync header to help PC detect start of audio data
-    const uint8_t sync_header[] = {0xFF, 0xFF, 0xAA, 0xAA, 0x55, 0x55};
-    uart_send(sync_header, sizeof(sync_header));
     nrf_delay_ms(100);
     
      //Initialize and start PDM
@@ -155,381 +239,3 @@ int main(void)
 
 
 
-////V3 binary data to direct python
-//#include <stdbool.h>
-//#include <stdint.h>
-//#include "nrf.h"
-//#include "nrf_gpio.h"
-//#include "nrfx_pdm.h"
-//#include "nrf_delay.h"
-//#include "app_error.h"
-//#include "SEGGER_RTT.h"
-
-//// PDM Microphone pins
-//#define PDM_CLK_PIN  7   // P0.07
-//#define PDM_DIN_PIN  8   // P0.08
-
-//// PDM buffer configuration
-//// Increasing buffer size slightly to help with RTT throughput
-//#define PDM_BUFFER_SIZE 256
-
-//static int16_t m_pdm_buffer[2][PDM_BUFFER_SIZE];
-//static uint8_t m_buffer_idx = 0;
-
-///**
-// * @brief PDM event handler
-// * Instead of printing ASCII strings, we write raw binary bytes to RTT.
-// * This is significantly faster and prevents data loss.
-// */
-//static void pdm_event_handler(nrfx_pdm_evt_t const * p_evt)
-//{
-//    if (p_evt->buffer_released != NULL)
-//    {
-//        // Write the raw bytes of the buffer directly to RTT Buffer 0
-//        // Total bytes = PDM_BUFFER_SIZE * 2 (since each sample is 16-bit)
-//        SEGGER_RTT_Write(0, p_evt->buffer_released, PDM_BUFFER_SIZE * sizeof(int16_t));
-//    }
-
-//    if (p_evt->buffer_requested)
-//    {
-//        m_buffer_idx = (m_buffer_idx + 1) % 2;
-//        nrfx_pdm_buffer_set(m_pdm_buffer[m_buffer_idx], PDM_BUFFER_SIZE);
-//    }
-//}
-
-///**
-// * @brief Initialize PDM
-// */
-//static void pdm_init(void)
-//{
-//    nrfx_pdm_config_t pdm_config = NRFX_PDM_DEFAULT_CONFIG(PDM_CLK_PIN, PDM_DIN_PIN);
-    
-//    pdm_config.mode = NRF_PDM_MODE_MONO;
-//    pdm_config.edge = NRF_PDM_EDGE_LEFTFALLING;
-    
-//    // nRF52810 frequency check:
-//    // For 16kHz sample rate, we target ~1.024MHz or 1.032MHz clock.
-//    // If NRF_PDM_FREQ_1032K is undefined, 1024K is the standard choice for nRF52810.
-//    #if defined(NRF_PDM_FREQ_1032K)
-//        pdm_config.clock_freq = NRF_PDM_FREQ_1032K;
-//    #elif defined(NRF_PDM_FREQ_1024K)
-//        pdm_config.clock_freq = NRF_PDM_FREQ_1024K;
-//    #else
-//        pdm_config.clock_freq = 0x08000000; // Manual register value for ~1MHz
-//    #endif
-    
-//    // Gain setting: 0x50 is approx +20dB. 
-//    // If it sounds distorted, reduce this to 0x40 or NRF_PDM_GAIN_DEFAULT (0x28).
-//    pdm_config.gain_l = 0x50; 
-//    pdm_config.gain_r = 0x50;
-
-//    ret_code_t err_code = nrfx_pdm_init(&pdm_config, pdm_event_handler);
-//    APP_ERROR_CHECK(err_code);
-//}
-
-//int main(void)
-//{
-//    // Initialize RTT
-//    SEGGER_RTT_Init();
-    
-//    // Configure RTT Buffer 0 to "Skip" if full to avoid blocking
-//    SEGGER_RTT_ConfigUpBuffer(0, "PDM_DATA", NULL, 0, SEGGER_RTT_MODE_NO_BLOCK_SKIP);
-
-//    pdm_init();
-//    nrfx_pdm_start();
-    
-//    while (true)
-//    {
-//        // Enter System ON sleep mode to save power while waiting for interrupts
-//        __WFE();
-//        __SEV();
-//        __WFE();
-//    }
-//}
-
-
-
-
-
-
-
-////V2 getting raw data and turning the python script to turn this in wav. 
-//#include <stdbool.h>
-//#include <stdint.h>
-//#include "nrf.h"
-//#include "nrf_gpio.h"
-//#include "nrfx_pdm.h"
-//#include "nrf_delay.h"
-//#include "app_error.h"
-//#include "SEGGER_RTT.h"
-
-//// PDM Microphone pins
-//#define PDM_CLK_PIN  7   // P0.07
-//#define PDM_DIN_PIN  8   // P0.08
-
-//// PDM buffer configuration
-//#define PDM_BUFFER_SIZE 128
-
-//static int16_t m_pdm_buffer[2][PDM_BUFFER_SIZE];
-//static uint8_t m_buffer_idx = 0;
-
-///**
-//* @brief PDM event handler - ONLY print raw data
-//*/
-//static void pdm_event_handler(nrfx_pdm_evt_t const * p_evt)
-//{
-//   if (p_evt->buffer_released != NULL)
-//   {
-//       int16_t *p_buffer = (int16_t *)p_evt->buffer_released;
-        
-//       // Print ONLY the raw samples, nothing else
-//       for (int i = 0; i < PDM_BUFFER_SIZE; i++)
-//       {
-//           SEGGER_RTT_printf(0, "%d\n", p_buffer[i]);
-//       }
-//   }
-
-//   if (p_evt->buffer_requested)
-//   {
-//       m_buffer_idx = (m_buffer_idx + 1) % 2;
-//       nrfx_pdm_buffer_set(m_pdm_buffer[m_buffer_idx], PDM_BUFFER_SIZE);
-//   }
-//}
-
-///**
-//* @brief Initialize PDM
-//*/
-//static void pdm_init(void)
-//{
-//   nrfx_pdm_config_t pdm_config = NRFX_PDM_DEFAULT_CONFIG(PDM_CLK_PIN, PDM_DIN_PIN);
-    
-//   pdm_config.mode = NRF_PDM_MODE_MONO;
-//   pdm_config.edge = NRF_PDM_EDGE_LEFTFALLING;
-    
-//   #ifdef NRF_PDM_FREQ_1280K
-//       pdm_config.clock_freq = NRF_PDM_FREQ_1280K;
-//   #else
-//       pdm_config.clock_freq = NRF_PDM_FREQ_1032K;
-//   #endif
-    
-//   pdm_config.gain_l = NRF_PDM_GAIN_DEFAULT;
-//   pdm_config.gain_r = NRF_PDM_GAIN_DEFAULT;
-
-//   nrfx_pdm_init(&pdm_config, pdm_event_handler);
-//}
-
-///**
-//* @brief Main function
-//*/
-//int main(void)
-//{
-//   pdm_init();
-//   nrfx_pdm_start();
-    
-//   // Continuous recording - no prints, just data
-//   while (true)
-//   {
-//       nrf_delay_ms(100);
-//   }
-//}
-
-
-
-
-
-
-
-
-
-
-
-
-////v1 with blink record the data
-////#include <stdbool.h>
-////#include <stdint.h>
-////#include <string.h>
-////#include "nrf.h"
-////#include "nrf_gpio.h"
-////#include "nrfx_pdm.h"
-////#include "nrf_log.h"
-////#include "nrf_log_ctrl.h"
-////#include "nrf_log_default_backends.h"
-////#include "nrf_delay.h"
-////#include "app_error.h"
-
-////// Custom LED pins
-////#define LED_1   23  // P0.23
-////#define LED_2   24  // P0.24
-////#define LED_3   22  // P0.22
-
-////// PDM Microphone pins
-////#define PDM_CLK_PIN  7   // P0.07
-////#define PDM_DIN_PIN  8   // P0.08
-
-////// PDM buffer configuration
-////#define PDM_BUFFER_SIZE 128
-
-////static int16_t m_pdm_buffer[2][PDM_BUFFER_SIZE];
-////static uint8_t m_buffer_idx = 0;
-
-////// Statistics
-////static uint32_t m_total_samples = 0;
-////static uint32_t m_buffer_count = 0;
-
-////// LED functions
-////static void led_init(void)
-////{
-////    nrf_gpio_cfg_output(LED_1);
-////    nrf_gpio_cfg_output(LED_2);
-////    nrf_gpio_cfg_output(LED_3);
-    
-////    nrf_gpio_pin_set(LED_1);
-////    nrf_gpio_pin_set(LED_2);
-////    nrf_gpio_pin_set(LED_3);
-////}
-
-////static void led_indicate_recording(void)
-////{
-////    nrf_gpio_pin_toggle(LED_1);
-////}
-
-////static void led_indicate_data(void)
-////{
-////    nrf_gpio_pin_toggle(LED_2);
-////}
-
-///**
-// * @brief PDM event handler - Continuous recording
-// */
-//static void pdm_event_handler(nrfx_pdm_evt_t const * p_evt)
-//{
-//    if (p_evt->error)
-//    {
-//        NRF_LOG_ERROR("PDM Error: 0x%08X", p_evt->error);
-//        return;
-//    }
-
-//    if (p_evt->buffer_released != NULL)
-//    {
-//        led_indicate_data();
-        
-//        int16_t *p_buffer = (int16_t *)p_evt->buffer_released;
-//        m_buffer_count++;
-        
-//        // Print buffer header
-//        NRF_LOG_INFO("=== Buffer %d (Samples %d-%d) ===", 
-//                     m_buffer_count,
-//                     m_total_samples,
-//                     m_total_samples + PDM_BUFFER_SIZE - 1);
-        
-//        // Print all samples in this buffer
-//        for (int i = 0; i < PDM_BUFFER_SIZE; i++)
-//        {
-//            NRF_LOG_INFO("%d", p_buffer[i]);
-//            m_total_samples++;
-//        }
-        
-//        NRF_LOG_INFO(""); // Empty line for readability
-//        NRF_LOG_FLUSH();
-//    }
-
-//    if (p_evt->buffer_requested)
-//    {
-//        m_buffer_idx = (m_buffer_idx + 1) % 2;
-//        nrfx_pdm_buffer_set(m_pdm_buffer[m_buffer_idx], PDM_BUFFER_SIZE);
-//    }
-//}
-
-///**
-// * @brief Initialize PDM
-// */
-//static void pdm_init(void)
-//{
-//    nrfx_err_t err_code;
-
-//    // Configure PDM
-//    nrfx_pdm_config_t pdm_config = NRFX_PDM_DEFAULT_CONFIG(PDM_CLK_PIN, PDM_DIN_PIN);
-    
-//    pdm_config.mode = NRF_PDM_MODE_MONO;
-//    pdm_config.edge = NRF_PDM_EDGE_LEFTFALLING;
-    
-//    #ifdef NRF_PDM_FREQ_1280K
-//        pdm_config.clock_freq = NRF_PDM_FREQ_1280K;
-//    #else
-//        pdm_config.clock_freq = NRF_PDM_FREQ_1032K;
-//    #endif
-    
-//    pdm_config.gain_l = NRF_PDM_GAIN_DEFAULT;
-//    pdm_config.gain_r = NRF_PDM_GAIN_DEFAULT;
-
-//    // Initialize PDM
-//    err_code = nrfx_pdm_init(&pdm_config, pdm_event_handler);
-//    APP_ERROR_CHECK(err_code);
-
-//    NRF_LOG_INFO("PDM initialized successfully");
-//    NRF_LOG_INFO("Sample rate: ~16000 Hz");
-//    NRF_LOG_INFO("Buffer size: %d samples", PDM_BUFFER_SIZE);
-//    NRF_LOG_INFO("Buffer interval: ~%d ms", (PDM_BUFFER_SIZE * 1000) / 16000);
-//}
-
-///**
-// * @brief Initialize logging
-// */
-//static void log_init(void)
-//{
-//    ret_code_t err_code = NRF_LOG_INIT(NULL);
-//    APP_ERROR_CHECK(err_code);
-//    NRF_LOG_DEFAULT_BACKENDS_INIT();
-//}
-
-///**
-// * @brief Main function
-// */
-//int main(void)
-//{
-//    nrfx_err_t err_code;
-
-//    led_init();
-//    log_init();
-    
-//    NRF_LOG_INFO("========================================");
-//    NRF_LOG_INFO("PDM Microphone - Continuous Recording");
-//    NRF_LOG_INFO("========================================");
-//    NRF_LOG_INFO("Recording will continue indefinitely");
-//    NRF_LOG_INFO("Each buffer contains %d samples", PDM_BUFFER_SIZE);
-//    NRF_LOG_INFO("LED 1: Recording indicator");
-//    NRF_LOG_INFO("LED 2: Data received indicator");
-//    NRF_LOG_INFO("");
-//    NRF_LOG_INFO("Starting in 2 seconds...");
-//    NRF_LOG_FLUSH();
-
-//    nrf_delay_ms(2000);
-
-//    pdm_init();
-
-//    // Start PDM
-//    err_code = nrfx_pdm_start();
-//    APP_ERROR_CHECK(err_code);
-    
-//    NRF_LOG_INFO("Recording started!");
-//    NRF_LOG_INFO("Data format: One sample per line (int16)");
-//    NRF_LOG_INFO("========================================");
-//    NRF_LOG_INFO("");
-//    NRF_LOG_FLUSH();
-
-//    uint32_t led_timer = 0;
-//    while (true)
-//    {
-//        NRF_LOG_FLUSH();
-        
-//        // Toggle recording LED periodically
-//        led_timer++;
-//        if (led_timer >= 5)
-//        {
-//            led_indicate_recording();
-//            led_timer = 0;
-//        }
-        
-//        nrf_delay_ms(100);
-//    }
-//}

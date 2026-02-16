@@ -7,6 +7,7 @@ Output/Release/Obj/ble_app_uart_pca10040e_s112/main.o: \
  C:/Program\ Files/SEGGER/SEGGER\ Embedded\ Studio\ 8.24/include/__SEGGER_RTL_Conf.h \
  C:/Program\ Files/SEGGER/SEGGER\ Embedded\ Studio\ 8.24/include/__SEGGER_RTL_Arm_Conf.h \
  C:/Program\ Files/SEGGER/SEGGER\ Embedded\ Studio\ 8.24/include/string.h \
+ C:/Program\ Files/SEGGER/SEGGER\ Embedded\ Studio\ 8.24/include/stdio.h \
  C:/nrf_sdk/modules/nrfx/mdk/nrf.h C:/nrf_sdk/modules/nrfx/mdk/nrf52810.h \
  C:/nrf_sdk/components/toolchain/cmsis/include/core_cm4.h \
  C:/nrf_sdk/components/toolchain/cmsis/include/core_cmInstr.h \
@@ -45,7 +46,6 @@ Output/Release/Obj/ble_app_uart_pca10040e_s112/main.o: \
  C:/nrf_sdk/components/softdevice/s112/headers/nrf_nvic.h \
  C:/nrf_sdk/components/libraries/util/nrf_assert.h \
  C:/nrf_sdk/components/libraries/util/app_error.h \
- C:/Program\ Files/SEGGER/SEGGER\ Embedded\ Studio\ 8.24/include/stdio.h \
  C:/nrf_sdk/components/libraries/util/sdk_errors.h \
  C:/nrf_sdk/components/softdevice/s112/headers/nrf_error.h \
  C:/nrf_sdk/components/libraries/util/app_error_weak.h \
