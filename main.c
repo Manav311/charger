@@ -103,24 +103,23 @@ static uint32_t isqrt(uint32_t n)
     return x;
 }
 
-// T3902 Standard Mode: -26 dBFS at 94 dB SPL, 0 dBFS = 120 dB SPL
-// PDM gain_l = 0x20 adds ~4 dB attenuation vs default 0x28
-// Total offset: 120 + 4 = 124 (in x10 fixed-point: 1240)
-#define DBFS_TO_SPL_OFFSET_X10  1240
-
 /**
- * @brief Approximate 20*log10(rms) using integer math, converted to dB SPL.
+ * @brief Approximate 20*log10(rms) using integer math.
  *        Uses log2 via leading-zero count, then converts: dB ~ 6.0206 * log2(x)
- *        Returns dB SPL in fixed-point with 1 decimal place (e.g. 723 = 72.3 dB SPL).
+ *        Returns dB in fixed-point with 1 decimal place (e.g. 723 = 72.3 dB).
+ *        Result is dBFS (relative to int16 full-scale = 32768).
  */
-static int32_t rms_to_db_spl(uint32_t rms)
+static int32_t rms_to_dbfs(uint32_t rms)
 {
-    if (rms == 0) return 0; // silence = 0 dB SPL (floor)
+    if (rms == 0) return -9999; // represents -inf
 
-    // 20*log10(rms/32768) in x10 fixed point
-    // 20*log10(32768) * 10 = 903
+    // 20*log10(rms/32768) = 20*log10(rms) - 20*log10(32768)
+    // 20*log10(32768) = 90.31 dB (we use 903 in fixed-point x10)
+    // 20*log10(x) = 20 * log2(x) / log2(10) = 20 * log2(x) * 0.30103
+    //             = 6.0206 * log2(x)
+    // In fixed-point x10: 60.206 * log2(x), approximate as 60 * log2(x)
 
-    // Find integer part of log2
+    // Find integer part of log2 using CLZ
     uint32_t log2_int = 0;
     uint32_t temp = rms;
     while (temp > 1)
@@ -130,19 +129,18 @@ static int32_t rms_to_db_spl(uint32_t rms)
     }
 
     // Fractional part: linear interpolation between powers of 2
+    // frac = (rms - 2^log2_int) / 2^log2_int, scaled to 0-1000
     uint32_t pow2 = 1UL << log2_int;
     uint32_t frac_1000 = ((rms - pow2) * 1000UL) / pow2;
 
-    // 20*log10(rms) in x10 fixed point = 60 * log2(rms)
-    int32_t dbfs_x10 = (int32_t)(60 * log2_int + (60 * frac_1000) / 1000);
-    dbfs_x10 -= 903; // subtract 20*log10(32768)*10
+    // 20*log10(rms) in x10 fixed point = 60 * (log2_int + frac/1000)
+    //                                   = 60*log2_int + 60*frac/1000
+    int32_t db_x10 = (int32_t)(60 * log2_int + (60 * frac_1000) / 1000);
 
-    // Convert dBFS to dB SPL
-    int32_t db_spl_x10 = dbfs_x10 + DBFS_TO_SPL_OFFSET_X10;
+    // Subtract 20*log10(32768) * 10 = 903
+    db_x10 -= 903;
 
-    if (db_spl_x10 < 0) db_spl_x10 = 0; // floor at 0 dB SPL
-
-    return db_spl_x10;
+    return db_x10;
 }
 
 // UART text buffer for dB output
@@ -157,32 +155,37 @@ static void pdm_event_handler(nrfx_pdm_evt_t const * p_evt)
     {
         int16_t *p_buf = (int16_t *)p_evt->buffer_released;
 
-        // First pass: compute DC mean to remove T3902's ~3% DC offset
-        int32_t sum = 0;
-        for (int i = 0; i < PDM_BUFFER_SIZE; i++)
-        {
-            sum += (int32_t)p_buf[i];
-        }
-        int32_t dc_mean = sum / PDM_BUFFER_SIZE;
-
-        // Second pass: compute sum of squares with DC removed
+        // Compute sum of squares for RMS
         uint64_t sum_sq = 0;
         for (int i = 0; i < PDM_BUFFER_SIZE; i++)
         {
-            int32_t sample = (int32_t)p_buf[i] - dc_mean;
+            int32_t sample = (int32_t)p_buf[i];
             sum_sq += (uint64_t)(sample * sample);
         }
 
         uint32_t mean_sq = (uint32_t)(sum_sq / PDM_BUFFER_SIZE);
         uint32_t rms = isqrt(mean_sq);
 
-        int32_t db_spl = rms_to_db_spl(rms);
+        int32_t db = rms_to_dbfs(rms);
 
-        // db_spl is in x10 fixed point, e.g. 753 = 75.3 dB SPL
-        int32_t whole = db_spl / 10;
-        int32_t frac = db_spl % 10;
-        int len = snprintf(m_uart_text, sizeof(m_uart_text),
-                           "dB SPL: %d.%d\r\n", (int)whole, (int)frac);
+        int len;
+        if (db <= -9999)
+        {
+            len = snprintf(m_uart_text, sizeof(m_uart_text), "dBFS: -inf\r\n");
+        }
+        else
+        {
+            // db is in x10 fixed point, e.g. -253 means -25.3 dBFS
+            int32_t whole = db / 10;
+            int32_t frac = db % 10;
+            if (db < 0 && frac != 0)
+            {
+                whole -= 1;
+                frac = 10 - (-frac);
+            }
+            if (frac < 0) frac = -frac;
+            len = snprintf(m_uart_text, sizeof(m_uart_text), "dBFS: %d.%d\r\n", (int)whole, (int)frac);
+        }
 
         uart_send((uint8_t*)m_uart_text, (size_t)len);
     }
@@ -221,7 +224,7 @@ int main(void)
     uart_init();
     
      //Send startup message
-    const char startup_msg[] = "PDM Mic dB SPL Monitor\r\n";
+    const char startup_msg[] = "PDM Mic dB Level Monitor\r\n";
     uart_send((uint8_t*)startup_msg, strlen(startup_msg));
     nrf_delay_ms(100);
     
