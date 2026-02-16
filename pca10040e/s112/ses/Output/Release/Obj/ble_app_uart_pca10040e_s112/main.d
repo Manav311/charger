@@ -60,4 +60,53 @@ Output/Release/Obj/ble_app_uart_pca10040e_s112/main.o: \
  C:/nrf_sdk/modules/nrfx/drivers/include/nrfx_uarte.h \
  C:/nrf_sdk/modules/nrfx/hal/nrf_uarte.h \
  C:/nrf_sdk/components/libraries/delay/nrf_delay.h \
- C:/nrf_sdk/components/libraries/util/app_error.h
+ C:/nrf_sdk/components/libraries/util/app_error.h \
+ C:/nrf_sdk/components/softdevice/s112/headers/ble.h \
+ C:/nrf_sdk/components/softdevice/s112/headers/ble_err.h \
+ C:/nrf_sdk/components/softdevice/s112/headers/ble_gap.h \
+ C:/nrf_sdk/components/softdevice/s112/headers/ble_hci.h \
+ C:/nrf_sdk/components/softdevice/s112/headers/ble_ranges.h \
+ C:/nrf_sdk/components/softdevice/s112/headers/ble_types.h \
+ C:/nrf_sdk/components/softdevice/s112/headers/ble_gatt.h \
+ C:/nrf_sdk/components/softdevice/s112/headers/ble_gattc.h \
+ C:/nrf_sdk/components/softdevice/s112/headers/ble_gatts.h \
+ C:/nrf_sdk/components/softdevice/s112/headers/ble_err.h \
+ C:/nrf_sdk/components/softdevice/s112/headers/ble_hci.h \
+ C:/nrf_sdk/components/ble/common/ble_srv_common.h \
+ C:/nrf_sdk/components/softdevice/s112/headers/ble_types.h \
+ C:/nrf_sdk/components/softdevice/s112/headers/ble_gap.h \
+ C:/nrf_sdk/components/softdevice/s112/headers/ble_gatt.h \
+ C:/nrf_sdk/components/ble/common/ble_advdata.h \
+ C:/nrf_sdk/components/libraries/util/sdk_common.h \
+ C:/nrf_sdk/components/libraries/util/sdk_os.h \
+ C:/nrf_sdk/components/libraries/util/app_util.h \
+ C:/nrf_sdk/components/libraries/util/sdk_macros.h \
+ C:/nrf_sdk/components/ble/common/ble_conn_params.h \
+ C:/nrf_sdk/components/ble/common/ble_srv_common.h \
+ C:/nrf_sdk/components/softdevice/common/nrf_sdh.h \
+ C:/nrf_sdk/components/libraries/experimental_section_vars/nrf_section_iter.h \
+ C:/nrf_sdk/components/libraries/experimental_section_vars/nrf_section.h \
+ C:/nrf_sdk/components/softdevice/common/nrf_sdh_ble.h \
+ C:/nrf_sdk/components/boards/boards.h \
+ C:/nrf_sdk/components/boards/pca10040.h \
+ C:/nrf_sdk/components/libraries/timer/app_timer.h \
+ C:/nrf_sdk/components/libraries/log/nrf_log_instance.h \
+ C:/nrf_sdk/components/libraries/experimental_section_vars/nrf_section.h \
+ C:/nrf_sdk/components/libraries/log/nrf_log_types.h \
+ C:/nrf_sdk/components/libraries/sortlist/nrf_sortlist.h \
+ C:/nrf_sdk/components/libraries/button/app_button.h \
+ C:/nrf_sdk/components/ble/ble_services/ble_lbs/ble_lbs.h \
+ C:/nrf_sdk/components/ble/nrf_ble_gatt/nrf_ble_gatt.h \
+ C:/nrf_sdk/components/ble/nrf_ble_qwr/nrf_ble_qwr.h \
+ C:/nrf_sdk/components/libraries/pwr_mgmt/nrf_pwr_mgmt.h \
+ C:/nrf_sdk/components/libraries/log/nrf_log.h \
+ C:/nrf_sdk/components/libraries/strerror/nrf_strerror.h \
+ C:/nrf_sdk/components/libraries/log/src/nrf_log_internal.h \
+ C:/nrf_sdk/components/libraries/log/nrf_log_types.h \
+ C:/nrf_sdk/components/libraries/log/nrf_log_ctrl.h \
+ C:/nrf_sdk/components/libraries/log/src/nrf_log_ctrl_internal.h \
+ C:/nrf_sdk/components/libraries/log/nrf_log_backend_interface.h \
+ C:/nrf_sdk/components/libraries/memobj/nrf_memobj.h \
+ C:/Program\ Files/SEGGER/SEGGER\ Embedded\ Studio\ 8.24/include/stdlib.h \
+ C:/nrf_sdk/components/libraries/balloc/nrf_balloc.h \
+ C:/nrf_sdk/components/libraries/log/nrf_log_default_backends.h

@@ -15,6 +15,7 @@
 "Output/Release/Obj/ble_app_uart_pca10040e_s112/nrf_ble_gatt.o"
 "Output/Release/Obj/ble_app_uart_pca10040e_s112/nrf_ble_qwr.o"
 "Output/Release/Obj/ble_app_uart_pca10040e_s112/ble_nus.o"
+"Output/Release/Obj/ble_app_uart_pca10040e_s112/ble_lbs.o"
 "Output/Release/Obj/ble_app_uart_pca10040e_s112/nrf_drv_clock.o"
 "Output/Release/Obj/ble_app_uart_pca10040e_s112/nrf_drv_uart.o"
 "Output/Release/Obj/ble_app_uart_pca10040e_s112/nrfx_atomic.o"
