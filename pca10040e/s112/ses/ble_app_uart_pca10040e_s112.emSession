@@ -1,0 +1,48 @@
+<!DOCTYPE CrossStudio_Session_File>
+<session>
+ <Bookmarks/>
+ <Breakpoints groups="Breakpoints" active_group="Breakpoints"/>
+ <ExecutionProfileWindow/>
+ <FrameBuffer/>
+ <Memory1/>
+ <Memory2/>
+ <Memory3/>
+ <Memory4/>
+ <Project>
+  <ProjectSessionItem path="ble_app_uart_pca10040e_s112"/>
+  <ProjectSessionItem path="ble_app_uart_pca10040e_s112;ble_app_uart_pca10040e_s112"/>
+  <ProjectSessionItem path="ble_app_uart_pca10040e_s112;ble_app_uart_pca10040e_s112;Application"/>
+  <ProjectSessionItem path="ble_app_uart_pca10040e_s112;ble_app_uart_pca10040e_s112;drivers"/>
+ </Project>
+ <Register1/>
+ <Register2/>
+ <Register3/>
+ <Register4/>
+ <Threads>
+  <ThreadsWindow showLists=""/>
+ </Threads>
+ <TraceWindow>
+  <Trace enabled="Yes"/>
+ </TraceWindow>
+ <Watch1>
+  <Watches active="1" update="Never"/>
+ </Watch1>
+ <Watch2>
+  <Watches active="0" update="Never"/>
+ </Watch2>
+ <Watch3>
+  <Watches active="0" update="Never"/>
+ </Watch3>
+ <Watch4>
+  <Watches active="0" update="Never"/>
+ </Watch4>
+ <Files>
+  <SessionOpenFile windowGroup="DockEditLeft" x="43" y="117" useTextEdit="1" path="../../../main.c" left="0" top="159" codecName="Default"/>
+  <SessionOpenFile windowGroup="DockEditLeft" x="22" y="100" useTextEdit="1" path="../../../../../../components/libraries/uart/retarget.c" left="0" top="75" codecName="Default"/>
+  <SessionOpenFile windowGroup="DockEditLeft" x="10" y="4210" useTextEdit="1" path="../config/sdk_config.h" left="0" top="4210" codecName="Default"/>
+  <SessionOpenFile windowGroup="DockEditLeft" x="67" y="98" useTextEdit="1" path="../../../../../../modules/nrfx/drivers/include/nrfx_pdm.h" left="0" selected="1" top="84" codecName="Default"/>
+  <SessionOpenFile windowGroup="DockEditLeft" x="22" y="93" useTextEdit="1" path="../../../../../../modules/nrfx/hal/nrf_pdm.h" left="0" top="74" codecName="Default"/>
+  <SessionOpenFile windowGroup="DockEditLeft" x="0" y="354" useTextEdit="1" path="../../../../../../integration/nrfx/legacy/apply_old_config.h" left="0" top="348" codecName="Default"/>
+ </Files>
+ <EMStudioWindow activeProject="ble_app_uart_pca10040e_s112" fileDialogDefaultFilter="*.c" autoConnectTarget="J-Link" buildConfiguration="Release" sessionSettings="" debugSearchFileMap="" fileDialogInitialDirectory="C:/nrf_sdk/modules/nrfx/drivers/src" debugSearchPath="" autoConnectCapabilities="3199"/>
+</session>
